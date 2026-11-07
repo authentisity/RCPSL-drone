@@ -32,6 +32,7 @@ standoffs and cameras installed.
 | Rotor plane height above CG | `rotor.z_offset` | 0.026 m [spec] | Ruler, prop plane to CG height. |
 | Prop diameter / pitch | `rotor.radius` | r = 0.06 m [spec] | Read off the prop (e.g. 5045 = 5.0" diameter, 4.5" pitch). |
 | Forward camera pose | `front_camera.xyz`, `.rpy` | 0.09 m forward, level [placeholder] | Ruler from CG to the lens centre; tilt angle with a phone inclinometer. |
+| Forward camera intrinsics (fx, fy, cx, cy, distortion) | `front_camera.hfov`, `.width`, `.height` | 640×480, HFOV 1.51 rad [placeholder] | Checkerboard calibration (ROS `camera_calibration` or OpenCV) at the resolution you fly. HFOV = 2 atan(width / (2 fx)). |
 | Outer dimensions (with guards) | `body.width`, `body.height` | 0.35 × 0.124 m [spec] | Ruler. Only used for the collision box. |
 
 ### Motor and propeller (second priority: thrust mapping and the yaw/thrust model)
