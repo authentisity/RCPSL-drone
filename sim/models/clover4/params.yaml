@@ -1,0 +1,54 @@
+# Physical parameters for the Clover 4 stand-in model. The xacro reads this file;
+# edit values here, not in the xacro.
+#
+# Each value is tagged by where it came from:
+#   [spec]        published COEX spec or COEX CAD-derived geometry
+#   [placeholder] borrowed from another model (mostly the 3DR Iris via COEX's sim)
+#   [measured]    measured on our drone (none yet)
+# MEASUREMENTS.md lists what to measure and how. Change the tag when you update a value.
+#
+# Frames: base_link is FLU (x forward, y left, z up) at the centre of gravity (CG).
+# Units: SI (kg, m, s, rad).
+
+body:
+  mass: 1.0               # [spec] COEX Clover 4 takeoff weight, battery included. Total of base + 4 rotors
+  # Box inertia is assumed until it's measured: box of size width x width x height.
+  width: 0.35             # [spec] outer size with prop guards (COEX sim)
+  height: 0.124           # [spec] COEX sim collision box height
+  inertia:                # [placeholder] null = use the box formula from mass, width and height
+    ixx: null
+    iyy: null
+    izz: null
+  mesh_z_offset: 0.025    # [spec] COEX mesh origin relative to base_link
+
+rotor:
+  mass: 0.01              # [placeholder] Iris
+  radius: 0.06            # [spec] COEX sim, prop radius (collision disc)
+  arm_x: 0.083            # [spec] COEX sim, rotor centre |x| from CG
+  arm_y: 0.083            # [spec] COEX sim, rotor centre |y| from CG
+  z_offset: 0.026         # [spec] COEX sim, rotor plane above CG
+  # Motor and prop model (gz MulticopterMotorModel): thrust = motor_constant * w^2,
+  # yaw torque = moment_constant * thrust.
+  motor_constant: 8.54858e-06      # [placeholder] Iris
+  moment_constant: 0.06            # [placeholder] Iris via COEX; likely too high for 5" props
+  time_constant_up: 0.0125         # [placeholder] Iris
+  time_constant_down: 0.025        # [placeholder] Iris
+  max_rot_velocity: 1100           # [placeholder] COEX sim, rad/s
+  rotor_drag_coefficient: 1.75e-04 # [placeholder] COEX sim
+  rolling_moment_coefficient: 1.0e-06  # [placeholder] Iris
+  velocity_slowdown_sim: 10        # sim-only: the visual spin rate is divided by this
+
+# Forward camera. This is a generic RGB-D placeholder until the real camera is chosen.
+front_camera:
+  xyz: [0.09, 0.0, 0.0]   # [placeholder] mount position relative to CG
+  rpy: [0.0, 0.0, 0.0]    # [placeholder] looking forward
+  width: 640              # [placeholder]
+  height: 480             # [placeholder]
+  hfov: 1.51              # [placeholder] rad (~87 deg, typical stereo depth camera)
+  rate: 30                # [placeholder] Hz
+  near: 0.2               # [placeholder] m, depth minimum range
+  far: 10.0               # [placeholder] m, depth maximum range
+
+# Ground-truth odometry for the controller and logging (not fed to PX4).
+ground_truth:
+  rate: 250               # Hz; capped by the world physics step (4 ms in PX4 worlds)

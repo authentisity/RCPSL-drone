@@ -1,0 +1,191 @@
+<?xml version="1.0"?>
+<!--
+  Clover 4 stand-in model for Gazebo Jetty + PX4 SITL.
+  All physical values come from ../params.yaml; this file only holds structure.
+  Meshes are from COEX clover_description (MIT, see ../meshes/LICENSE.COEX).
+
+  PX4's gz_bridge expects:
+    - sensors imu_sensor, magnetometer_sensor, air_pressure_sensor, navsat_sensor on link base_link
+    - motors rotor_N_joint / rotor_N driven by MulticopterMotorModel on command/motor_speed
+  Rotor numbering follows PX4's quad X: 0 front-right CCW, 1 back-left CCW,
+  2 front-left CW, 3 back-right CW (seen from above).
+
+  Expand with:  xacro clover4.urdf.xacro > clover4.urdf
+-->
+<robot name="clover4" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <!-- params:=<path> picks another parameter file. Relative paths are relative to this file. -->
+  <xacro:arg name="params" default="../params.yaml"/>
+  <xacro:property name="p" value="${xacro.load_yaml('$(arg params)')}" lazy_eval="false"/>
+  <xacro:property name="b" value="${p['body']}"/>
+  <xacro:property name="r" value="${p['rotor']}"/>
+  <xacro:property name="cam" value="${p['front_camera']}"/>
+  <xacro:property name="mesh_dir" value="package://clover4/meshes"/>
+
+  <!-- base_link carries everything except the rotors, so total mass = body.mass -->
+  <xacro:property name="base_mass" value="${b['mass'] - 4 * r['mass']}"/>
+  <xacro:property name="w" value="${b['width']}"/>
+  <xacro:property name="h" value="${b['height']}"/>
+  <xacro:property name="I" value="${b['inertia']}"/>
+  <xacro:property name="ixx" value="${I['ixx'] if I['ixx'] is not None else base_mass * (w*w + h*h) / 12}"/>
+  <xacro:property name="iyy" value="${I['iyy'] if I['iyy'] is not None else base_mass * (w*w + h*h) / 12}"/>
+  <xacro:property name="izz" value="${I['izz'] if I['izz'] is not None else base_mass * (2*w*w) / 12}"/>
+
+  <link name="base_link">
+    <inertial>
+      <mass value="${base_mass}"/>
+      <origin xyz="0 0 0"/>
+      <inertia ixx="${ixx}" iyy="${iyy}" izz="${izz}" ixy="0" ixz="0" iyz="0"/>
+    </inertial>
+    <visual name="body">
+      <origin xyz="0 0 ${b['mesh_z_offset']}"/>
+      <geometry><mesh filename="${mesh_dir}/clover_body_solid.dae"/></geometry>
+    </visual>
+    <visual name="guards">
+      <origin xyz="0 0 ${b['mesh_z_offset']}"/>
+      <geometry><mesh filename="${mesh_dir}/clover_guards_transparent.dae"/></geometry>
+    </visual>
+    <collision>
+      <geometry><box size="${w} ${w} ${h}"/></geometry>
+    </collision>
+  </link>
+
+  <!-- Rotors. The rotor inertia is scaled by the slowdown factor, as in the PX4/COEX models,
+       because the joint spins velocity_slowdown_sim times slower than the real prop. -->
+  <xacro:macro name="rotor" params="n x y direction mesh">
+    <joint name="rotor_${n}_joint" type="revolute">
+      <origin xyz="${x} ${y} ${r['z_offset']}"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="-1e16" upper="1e16" effort="10" velocity="${r['max_rot_velocity']}"/>
+      <parent link="base_link"/>
+      <child link="rotor_${n}"/>
+    </joint>
+    <link name="rotor_${n}">
+      <inertial>
+        <mass value="${r['mass']}"/>
+        <xacro:property name="k" value="${r['mass'] * r['velocity_slowdown_sim'] / 12}"/>
+        <inertia ixx="${k * (0.015**2 + 0.003**2)}"
+                 iyy="${k * (4 * r['radius']**2 + 0.003**2)}"
+                 izz="${k * (4 * r['radius']**2 + 0.015**2)}"
+                 ixy="0" ixz="0" iyz="0"/>
+      </inertial>
+      <visual>
+        <geometry><mesh filename="${mesh_dir}/${mesh}"/></geometry>
+      </visual>
+      <collision>
+        <geometry><cylinder length="0.005" radius="${r['radius']}"/></geometry>
+      </collision>
+    </link>
+    <gazebo>
+      <plugin filename="gz-sim-multicopter-motor-model-system"
+              name="gz::sim::systems::MulticopterMotorModel">
+        <jointName>rotor_${n}_joint</jointName>
+        <linkName>rotor_${n}</linkName>
+        <turningDirection>${direction}</turningDirection>
+        <timeConstantUp>${r['time_constant_up']}</timeConstantUp>
+        <timeConstantDown>${r['time_constant_down']}</timeConstantDown>
+        <maxRotVelocity>${r['max_rot_velocity']}</maxRotVelocity>
+        <motorConstant>${r['motor_constant']}</motorConstant>
+        <momentConstant>${r['moment_constant']}</momentConstant>
+        <commandSubTopic>command/motor_speed</commandSubTopic>
+        <motorNumber>${n}</motorNumber>
+        <rotorDragCoefficient>${r['rotor_drag_coefficient']}</rotorDragCoefficient>
+        <rollingMomentCoefficient>${r['rolling_moment_coefficient']}</rollingMomentCoefficient>
+        <rotorVelocitySlowdownSim>${r['velocity_slowdown_sim']}</rotorVelocitySlowdownSim>
+        <motorType>velocity</motorType>
+      </plugin>
+    </gazebo>
+  </xacro:macro>
+
+  <xacro:rotor n="0" x="${ r['arm_x']}" y="${-r['arm_y']}" direction="ccw" mesh="prop_ccw.dae"/>
+  <xacro:rotor n="1" x="${-r['arm_x']}" y="${ r['arm_y']}" direction="ccw" mesh="prop_ccw.dae"/>
+  <xacro:rotor n="2" x="${ r['arm_x']}" y="${ r['arm_y']}" direction="cw"  mesh="prop_cw.dae"/>
+  <xacro:rotor n="3" x="${-r['arm_x']}" y="${-r['arm_y']}" direction="cw"  mesh="prop_cw.dae"/>
+
+  <!-- PX4 flight sensors. Noise models are PX4's x500 values (IIM42653 IMU, BMP390 baro,
+       IIS2MDC mag) and stand in until we know the flight controller's sensors. -->
+  <xacro:macro name="noise" params="stddev">
+    <noise type="gaussian"><mean>0</mean><stddev>${stddev}</stddev></noise>
+  </xacro:macro>
+  <gazebo reference="base_link">
+    <sensor name="imu_sensor" type="imu">
+      <gz_frame_id>base_link</gz_frame_id>
+      <always_on>1</always_on>
+      <update_rate>250</update_rate>
+      <imu>
+        <angular_velocity>
+          <x><xacro:noise stddev="0.0008726646"/></x>
+          <y><xacro:noise stddev="0.0008726646"/></y>
+          <z><xacro:noise stddev="0.0008726646"/></z>
+        </angular_velocity>
+        <linear_acceleration>
+          <x><xacro:noise stddev="0.00637"/></x>
+          <y><xacro:noise stddev="0.00637"/></y>
+          <z><xacro:noise stddev="0.00686"/></z>
+        </linear_acceleration>
+      </imu>
+    </sensor>
+    <sensor name="magnetometer_sensor" type="magnetometer">
+      <gz_frame_id>base_link</gz_frame_id>
+      <always_on>1</always_on>
+      <update_rate>100</update_rate>
+      <magnetometer>
+        <x><xacro:noise stddev="0.0001"/></x>
+        <y><xacro:noise stddev="0.0001"/></y>
+        <z><xacro:noise stddev="0.0001"/></z>
+      </magnetometer>
+    </sensor>
+    <sensor name="air_pressure_sensor" type="air_pressure">
+      <gz_frame_id>base_link</gz_frame_id>
+      <always_on>1</always_on>
+      <update_rate>50</update_rate>
+      <air_pressure>
+        <pressure><xacro:noise stddev="3"/></pressure>
+      </air_pressure>
+    </sensor>
+    <sensor name="navsat_sensor" type="navsat">
+      <gz_frame_id>base_link</gz_frame_id>
+      <always_on>1</always_on>
+      <update_rate>30</update_rate>
+    </sensor>
+  </gazebo>
+
+  <!-- Forward RGB-D camera (generic placeholder). The fixed joint is lumped into base_link
+       by the URDF converter; the sensor keeps its pose. Topics: /clover4/front_camera/{image,
+       depth_image,points,camera_info}. -->
+  <link name="front_camera_link"/>
+  <joint name="front_camera_joint" type="fixed">
+    <origin xyz="${' '.join(str(v) for v in cam['xyz'])}" rpy="${' '.join(str(v) for v in cam['rpy'])}"/>
+    <parent link="base_link"/>
+    <child link="front_camera_link"/>
+  </joint>
+  <gazebo reference="front_camera_link">
+    <sensor name="front_camera" type="rgbd_camera">
+      <gz_frame_id>front_camera_link</gz_frame_id>
+      <topic>clover4/front_camera</topic>
+      <always_on>1</always_on>
+      <update_rate>${cam['rate']}</update_rate>
+      <camera>
+        <horizontal_fov>${cam['hfov']}</horizontal_fov>
+        <image><width>${cam['width']}</width><height>${cam['height']}</height></image>
+        <clip><near>${cam['near']}</near><far>${cam['far']}</far></clip>
+        <depth_camera><clip><near>${cam['near']}</near><far>${cam['far']}</far></clip></depth_camera>
+      </camera>
+    </sensor>
+  </gazebo>
+
+  <!-- Ground-truth odometry for the controller and logging. The covariance topic is
+       renamed so PX4's gz_bridge (which listens on /model/<name>/odometry_with_covariance)
+       does not fuse ground truth as external vision. -->
+  <gazebo>
+    <plugin filename="gz-sim-odometry-publisher-system"
+            name="gz::sim::systems::OdometryPublisher">
+      <dimensions>3</dimensions>
+      <odom_frame>world</odom_frame>
+      <robot_base_frame>base_link</robot_base_frame>
+      <odom_publish_frequency>${p['ground_truth']['rate']}</odom_publish_frequency>
+      <odom_topic>/model/clover4/ground_truth/odometry</odom_topic>
+      <odom_covariance_topic>/model/clover4/ground_truth/odometry_with_covariance</odom_covariance_topic>
+      <tf_topic>/model/clover4/ground_truth/pose</tf_topic>
+    </plugin>
+  </gazebo>
+</robot>
