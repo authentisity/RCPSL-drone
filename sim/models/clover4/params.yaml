@@ -51,4 +51,4 @@ front_camera:
 
 # Ground-truth odometry for the controller and logging (not fed to PX4).
 ground_truth:
-  rate: 250               # Hz; capped by the world physics step (4 ms in PX4 worlds)
+  rate: 400               # Hz; capped by the world physics step (2.5 ms in sim/worlds/default_400hz)

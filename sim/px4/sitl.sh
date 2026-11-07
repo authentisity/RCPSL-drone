@@ -3,7 +3,8 @@
 # Runs inside the PX4 container:  sim/px4/run.sh sim/px4/sitl.sh [--headless] [--daemon]
 #   --headless  no Gazebo GUI (sensors still render on the GPU)
 #   --daemon    start PX4 without its interactive shell (for scripts); the log is /tmp/px4.log
-# Environment: PX4_GZ_WORLD (default "default", from PX4's worlds), SPAWN_Z (default 0.1).
+# Environment: PX4_GZ_WORLD (default "default_400hz"; looked up in sim/worlds, then
+# PX4's worlds), SPAWN_Z (default 0.1).
 #
 # Offboard MAVLink (the controller interface) is on UDP 14540; QGroundControl on 14550.
 set -euo pipefail
@@ -18,7 +19,7 @@ done
 
 px4=/px4/build/px4_sitl_default
 repo=/workspace
-world="${PX4_GZ_WORLD:-default}"
+world="${PX4_GZ_WORLD:-default_400hz}"
 
 # PX4's model, world and plugin paths, plus our models (model://clover4/...).
 export GZ_SIM_RESOURCE_PATH="${GZ_SIM_RESOURCE_PATH:-}" GZ_SIM_SYSTEM_PLUGIN_PATH="${GZ_SIM_SYSTEM_PLUGIN_PATH:-}"
@@ -30,7 +31,9 @@ cp "$repo"/sim/px4/airframes/* "$px4/etc/init.d-posix/airframes/"
 
 xacro "$repo/sim/models/clover4/urdf/clover4.urdf.xacro" > /tmp/clover4.urdf
 
-gz sim -r -s --verbose=1 "$PX4_GZ_WORLDS/$world.sdf" > /tmp/gz.log 2>&1 &
+world_file="$repo/sim/worlds/$world.sdf"
+[ -f "$world_file" ] || world_file="$PX4_GZ_WORLDS/$world.sdf"
+gz sim -r -s --verbose=1 "$world_file" > /tmp/gz.log 2>&1 &
 (( gui )) && { gz sim -g > /tmp/gz_gui.log 2>&1 & }
 
 until gz service -i --service "/world/$world/scene/info" 2>/dev/null | grep -q "Service providers"; do
